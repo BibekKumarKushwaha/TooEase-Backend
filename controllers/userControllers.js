@@ -182,6 +182,9 @@ const loginUser = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        phone: user.phone,
+        isAdmin: user.isAdmin,
+      
       },
     });
   } catch (error) {
@@ -376,31 +379,6 @@ const getUserProfile = async (req, res) => {
     }
 };
 
-// const updateUserProfile = async (req, res) => {
-//     const token = req.headers.authorization.split(' ')[1]; // Assuming Bearer token
-//     if (!token) {
-//         return res.status(401).json({ message: 'Authorization token is missing' });
-//     }
-//     try {
-//         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-//         const user = await userModel.findById(decoded.id);
-//         if (!user) {
-//             return res.status(404).json({ message: 'User not found' });
-//         }
-
-//         const { firstName, lastName, phone, password } = req.body;
-//         if (firstName) user.firstName = firstName;
-//         if (lastName) user.lastName = lastName;
-//         if (phone) user.phone = phone;
-//         if (password) user.password = await bcrypt.hash(password, 10);
-
-//         await user.save();
-//         res.json(user);
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).json({ message: 'Server error' });
-//     }
-// };
 const updateUserProfile = async (req, res) => {
   const token = req.headers.authorization.split(' ')[1]; // Assuming Bearer token
   if (!token) {
