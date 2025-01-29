@@ -21,10 +21,53 @@ const getLockTime = (attempts) => {
   return 0;
 };
 
-// REGISTER USER (unchanged)
+
 const createUser = async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
-  // ...
+
+  if (!firstName || !lastName || !email || !phone || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Please enter all fields!",
+    });
+  }
+
+  try {
+    const existingUser = await userModel.findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists!",
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = new userModel({
+      firstName,
+      lastName,
+      email,
+      phone,
+      password: hashedPassword,
+      passwordHistory: [hashedPassword], // Add initial password to history
+      passwordLastChanged: new Date(), // Record the password change date
+    });
+
+    await newUser.save();
+
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully!",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error!",
+    });
+  }
 };
 
 /**
