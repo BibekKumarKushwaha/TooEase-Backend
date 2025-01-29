@@ -95,6 +95,7 @@ const cartRoutes = require("./routes/cartRoutes");
 const reviewRoutes = require("./routes/reviewRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const contactRoutes = require("./routes/contactRoutes");
+const paymentRoutes = require("./routes/PaymentRoutes");
 
 // Create an express application
 const app = express();
@@ -138,6 +139,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/rating", reviewRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // HTTPS server configuration
 const options = {

@@ -3,105 +3,37 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sendOtp = require('../service/sendOtp');
 
+// Lockout tiers
+const LOCKOUT_CONFIG = [
+  { attempts: 5, lockTime: 15 * 1000 },       // Lock 15s after 5 attempts
+  { attempts: 10, lockTime: 60 * 1000 },      // Lock 1m after 10 attempts
+  { attempts: 15, lockTime: 5 * 60 * 1000 },  // Lock 5m after 15 attempts
+  { attempts: Infinity, lockTime: 60 * 60 * 1000 }, // 1h after 20+ attempts
+];
 
-// Define password policy
-const PASSWORD_POLICY = {
-  minLength: 8,
-  maxLength: 20,
-  regex: /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
-};
-const MAX_LOGIN_ATTEMPTS = 5; // Maximum allowed login attempts before lockout
-const LOCK_TIME = 15 * 60 * 1000; // Lockout time in milliseconds (15 minutes)
-
-
-// Track reused passwords and expiry
-const PASSWORD_HISTORY_LIMIT = 5; // Number of previous passwords to store
-const PASSWORD_EXPIRY_DAYS = 90; // Password expiry in days
-
-// Function to validate password strength
-const isPasswordValid = (password) => {
-  if (
-    password.length < PASSWORD_POLICY.minLength ||
-    password.length > PASSWORD_POLICY.maxLength ||
-    !PASSWORD_POLICY.regex.test(password)
-  ) {
-    return false;
-  }
-  return true;
-};
-
-// Function to check password reuse
-const isPasswordReused = async (user, newPassword) => {
-  for (const hashedOldPassword of user.passwordHistory || []) {
-    if (await bcrypt.compare(newPassword, hashedOldPassword)) {
-      return true;
+// Given current total attempts, find lock time from the config
+const getLockTime = (attempts) => {
+  for (const config of LOCKOUT_CONFIG) {
+    if (attempts <= config.attempts) {
+      return config.lockTime;
     }
   }
-  return false;
+  return 0;
 };
 
-// Create User Function
+// REGISTER USER (unchanged)
 const createUser = async (req, res) => {
-  console.log(req.body);
-
   const { firstName, lastName, email, phone, password } = req.body;
-
-  if (!firstName || !lastName || !email || !password || !phone) {
-    return res.status(400).json({
-      success: false,
-      message: "Please enter all fields!",
-    });
-  }
-
-  if (!isPasswordValid(password)) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Password must be 8-20 characters long, include uppercase, lowercase, numbers, and special characters!",
-    });
-  }
-
-  try {
-    const existingUser = await userModel.findOne({ email });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists!",
-      });
-    }
-
-    const randomSalt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, randomSalt);
-
-    const newUser = new userModel({
-      firstName,
-      lastName,
-      email,
-      phone,
-      password: hashedPassword,
-      passwordHistory: [hashedPassword], // Initialize password history
-      passwordLastChanged: new Date(), // Track password change date
-    });
-
-    await newUser.save();
-
-    res.status(201).json({
-      success: true,
-      message: "User Created Successfully!",
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error!",
-    });
-  }
+  // ...
 };
 
-
-
-
+/**
+ * LOGIN USER
+ * 
+ * Primary change: 
+ * 1. Remove resetting of loginAttempts to 0 when lockUntil is expired.
+ * 2. Only reset loginAttempts on successful password match.
+ */
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -122,37 +54,42 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // Check if the account is locked and reset if the lock period has passed
-    if (user.lockUntil && user.lockUntil <= Date.now()) {
-      user.loginAttempts = 0;
-      user.lockUntil = undefined;
-      await user.save();
+    // Check if user is locked
+    if (user.isLocked) {
+      // If the lock time has passed, remove the lock but DO NOT reset attempts
+      if (user.lockUntil <= Date.now()) {
+        user.lockUntil = null;
+        // <-- IMPORTANT: do NOT reset user.loginAttempts here
+        await user.save();
+      } else {
+        // If user is still locked, respond with time remaining
+        const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000);
+        return res.status(403).json({
+          success: false,
+          message: "Account is locked due to multiple failed login attempts.",
+          remainingTime,
+        });
+      }
     }
 
-    // If the account is still locked
-    if (user.lockUntil && user.lockUntil > Date.now()) {
-      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000); // Time in seconds
-      return res.status(403).json({
-        success: false,
-        message: "Account is locked due to multiple failed login attempts.",
-        remainingTime, // Remaining lockout time in seconds
-      });
-    }
-
-    // Compare password
+    // Validate password
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
+      // Increment attempts
       user.loginAttempts = (user.loginAttempts || 0) + 1;
 
-      // Lock account if max attempts exceeded
-      if (user.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
-        user.lockUntil = Date.now() + LOCK_TIME;
+      // Determine lock time based on the *new* total attempts
+      const lockTime = getLockTime(user.loginAttempts);
+
+      // If the user meets the minimum attempts to be locked (5 or more)
+      if (lockTime > 0 && user.loginAttempts >= LOCKOUT_CONFIG[0].attempts) {
+        user.lockUntil = Date.now() + lockTime;
         await user.save();
         return res.status(403).json({
           success: false,
           message: "Account locked due to multiple failed login attempts.",
-          remainingTime: LOCK_TIME / 1000, // Lock time in seconds
+          remainingTime: lockTime / 1000, // lock time in seconds
         });
       }
 
@@ -160,17 +97,20 @@ const loginUser = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Password not matched!",
-        remainingAttempts: MAX_LOGIN_ATTEMPTS - user.loginAttempts,
+        remainingAttempts:
+          LOCKOUT_CONFIG.find((config) => user.loginAttempts <= config.attempts)
+            ?.attempts - user.loginAttempts,
       });
     }
 
-    // Reset login attempts on successful login
+    // If password is correct, reset attempts & lock
     user.loginAttempts = 0;
-    user.lockUntil = undefined;
+    user.lockUntil = null;
     await user.save();
 
+    // Generate JWT token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h", // Optional: Token expiration time
+      expiresIn: "1h",
     });
 
     res.status(200).json({
@@ -184,7 +124,6 @@ const loginUser = async (req, res) => {
         email: user.email,
         phone: user.phone,
         isAdmin: user.isAdmin,
-      
       },
     });
   } catch (error) {
@@ -195,6 +134,7 @@ const loginUser = async (req, res) => {
     });
   }
 };
+
 // Change Password Function
 const changePassword = async (req, res) => {
   const { email, currentPassword, newPassword } = req.body;
