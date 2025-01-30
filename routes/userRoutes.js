@@ -27,5 +27,9 @@ router.get('/user/:id',userController.getUserDetails);
 router.get("/token",userController.getToken);
 
 router.get("/profile/get", userController.getCurrentProfile);
+
+router.get(("/all"), userController.getAllUsers);
+
+router.post('/logout', authGuard, userController.logoutUser);
 //Exporting the routes
 module.exports = router;
