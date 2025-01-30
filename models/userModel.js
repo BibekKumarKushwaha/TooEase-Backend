@@ -53,6 +53,10 @@ const userSchema = new mongoose.Schema({
     type: Date, // Track the last time the password was changed
     default: null,
   },
+  isLoggedIn: { // Newly added field
+    type: Boolean,
+    default: false,
+  },
 });
 
 // Add a virtual field to calculate if the user is currently locked
