@@ -3,6 +3,39 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sendOtp = require('../service/sendOtp');
 
+
+const PASSWORD_POLICY = {
+  minLength: 8,
+  maxLength: 20,
+  regex: /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+};
+
+// Track reused passwords and expiry
+const PASSWORD_HISTORY_LIMIT = 5; // Number of previous passwords to store
+const PASSWORD_EXPIRY_DAYS = 90; // Password expiry in days
+
+// Function to validate password strength
+const isPasswordValid = (password) => {
+  if (
+    password.length < PASSWORD_POLICY.minLength ||
+    password.length > PASSWORD_POLICY.maxLength ||
+    !PASSWORD_POLICY.regex.test(password)
+  ) {
+    return false;
+  }
+  return true;
+};
+
+// Function to check password reuse
+const isPasswordReused = async (user, newPassword) => {
+  for (const hashedOldPassword of user.passwordHistory || []) {
+    if (await bcrypt.compare(newPassword, hashedOldPassword)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // Lockout tiers
 const LOCKOUT_CONFIG = [
   { attempts: 5, lockTime: 15 * 1000 },       // Lock 15s after 5 attempts
@@ -21,14 +54,24 @@ const getLockTime = (attempts) => {
   return 0;
 };
 
-
+// Create User Function
 const createUser = async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
 
+  // Check for missing fields
   if (!firstName || !lastName || !email || !phone || !password) {
     return res.status(400).json({
       success: false,
       message: "Please enter all fields!",
+    });
+  }
+
+  // Validate password strength
+  if (!isPasswordValid(password)) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Password must be 8-20 characters long, include uppercase, lowercase, numbers, and special characters!",
     });
   }
 
@@ -70,16 +113,11 @@ const createUser = async (req, res) => {
   }
 };
 
-/**
- * LOGIN USER
- * 
- * Primary change: 
- * 1. Remove resetting of loginAttempts to 0 when lockUntil is expired.
- * 2. Only reset loginAttempts on successful password match.
- */
+// Login User Function
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
+  // Check for missing fields
   if (!email || !password) {
     return res.status(400).json({
       success: false,
@@ -146,9 +184,26 @@ const loginUser = async (req, res) => {
       });
     }
 
+    // Check for password expiry
+    if (user.passwordLastChanged) {
+      const passwordLastChanged = new Date(user.passwordLastChanged);
+      const passwordExpiryDate = new Date(
+        passwordLastChanged.setDate(passwordLastChanged.getDate() + PASSWORD_EXPIRY_DAYS)
+      );
+
+      if (new Date() > passwordExpiryDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Password has expired. Please reset your password.",
+        });
+      }
+    }
+
     // If password is correct, reset attempts & lock
     user.loginAttempts = 0;
     user.lockUntil = null;
+    user.isLoggedIn = true;
+    console.log(`User ${user.email} is logging in. isLoggedIn set to ${user.isLoggedIn}`);
     await user.save();
 
     // Generate JWT token
@@ -167,6 +222,7 @@ const loginUser = async (req, res) => {
         email: user.email,
         phone: user.phone,
         isAdmin: user.isAdmin,
+        isLoggedIn: user.isLoggedIn,
       },
     });
   } catch (error) {
@@ -182,6 +238,7 @@ const loginUser = async (req, res) => {
 const changePassword = async (req, res) => {
   const { email, currentPassword, newPassword } = req.body;
 
+  // Check for missing fields
   if (!email || !currentPassword || !newPassword) {
     return res.status(400).json({
       success: false,
@@ -189,6 +246,7 @@ const changePassword = async (req, res) => {
     });
   }
 
+  // Validate new password strength
   if (!isPasswordValid(newPassword)) {
     return res.status(400).json({
       success: false,
@@ -244,6 +302,7 @@ const changePassword = async (req, res) => {
     });
   }
 };
+
 
 
 const forgotPassword = async (req, res) => {
@@ -343,6 +402,22 @@ const verifyOtpAndSetPassword = async (req, res) => {
             'message': 'server error!'
         });
     }
+};
+
+const getAllUsers = async (req, res) => {
+  try {
+      const users = await userModel.find().select('-password -resetPasswordOTP -resetPasswordExpires -passwordHistory'); // Exclude sensitive fields
+      res.status(200).json({
+          success: true,
+          users,
+      });
+  } catch (error) {
+      console.error(error);
+      res.status(500).json({
+          success: false,
+          message: "Internal Server Error!",
+      });
+  }
 };
 const getUserProfile = async (req, res) => {
     const token = req.headers.authorization.split(' ')[1]; // Assuming Bearer token
@@ -505,6 +580,39 @@ const getCurrentProfile = async (req, res) => {
     });
   }
 };
+
+// ... existing imports and code
+
+// Logout User Function
+const logoutUser = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(' ')[1]; // Assuming Bearer token
+    if (!token) {
+      return res.status(401).json({ message: 'Authorization token is missing' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await userModel.findById(decoded.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.isLoggedIn = false; // Set isLoggedIn to false
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'User logged out successfully!',
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
   
   
 
@@ -520,4 +628,6 @@ module.exports = {
     getToken,
     getCurrentProfile,
     changePassword,
+    getAllUsers,
+    logoutUser
 };
