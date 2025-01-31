@@ -57,6 +57,11 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  isEmailVerified: { type: Boolean, default: false },
+    emailVerificationToken: String,
+    emailVerificationTokenExpire: Date,
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
 });
 
 // Add a virtual field to calculate if the user is currently locked
@@ -81,3 +86,5 @@ userSchema.pre("save", async function (next) {
 const User = mongoose.model("users", userSchema);
 
 module.exports = User;
+
+
