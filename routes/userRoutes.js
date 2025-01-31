@@ -31,5 +31,9 @@ router.get("/profile/get", userController.getCurrentProfile);
 router.get(("/all"), userController.getAllUsers);
 
 router.post('/logout', authGuard, userController.logoutUser);
+
+router.put("/verifyEmail/:token", userController.verifyEmail);
+
+
 //Exporting the routes
 module.exports = router;
