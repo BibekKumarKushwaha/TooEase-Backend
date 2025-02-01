@@ -8,7 +8,7 @@ const cors = require("cors");
 const acceptFormData = require("express-fileupload");
 const fs = require("fs");
 const path = require("path");
-
+const mongoSanitize = require("express-mongo-sanitize");
 
 
 // Import your route files
@@ -26,7 +26,7 @@ const app = express();
 const Routes = require("./routes/userRoutes");
 // Configure Cors Policy
 const corsOptions = {
-  origin: true,
+  origin: ["https://localhost:3000"],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -38,6 +38,15 @@ app.use(acceptFormData());
 
 // Make a static public folder
 app.use(express.static("./public"));
+
+
+// **Apply express-mongo-sanitize middleware**
+app.use(
+  mongoSanitize({
+    // Optionally, replace prohibited characters with an underscore
+    replaceWith: '_',
+  })
+);
 
 // Load environment variables
 dotenv.config();
