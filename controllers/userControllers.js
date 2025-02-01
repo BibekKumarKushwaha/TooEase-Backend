@@ -12,6 +12,7 @@ const PASSWORD_POLICY = {
   regex: /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
 };
 
+
 // Track reused passwords and expiry
 const PASSWORD_HISTORY_LIMIT = 5; // Number of previous passwords to store
 const PASSWORD_EXPIRY_DAYS = 90; // Password expiry in days
