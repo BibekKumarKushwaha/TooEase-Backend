@@ -37,3 +37,4 @@ router.put("/verifyEmail/:token", userController.verifyEmail);
 
 //Exporting the routes
 module.exports = router;
+
