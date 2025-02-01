@@ -24,3 +24,4 @@ const sendOtp = async (phone, otp) => {
   return isSent;
 };
 module.exports = sendOtp;
+
