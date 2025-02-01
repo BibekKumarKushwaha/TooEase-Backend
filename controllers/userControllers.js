@@ -13,6 +13,10 @@ const PASSWORD_POLICY = {
 };
 
 
+
+
+
+
 // Track reused passwords and expiry
 const PASSWORD_HISTORY_LIMIT = 5; // Number of previous passwords to store
 const PASSWORD_EXPIRY_DAYS = 90; // Password expiry in days
